@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="lv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uzskaites un Datu Sistēma</title>
+    <!-- Tailwind CSS modernam dizainam -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Bibliotēkas eksportam uz Excel un PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans min-h-screen">
+
+    <!-- 1. AUTORIZĀCIJAS LOGS -->
+    <div id="auth-container" class="flex items-center justify-center min-h-screen">
+        <div class="bg-white p-8 rounded-lg shadow-md w-96">
+            <h2 id="auth-title" class="text-2xl font-bold mb-6 text-center text-gray-800">Pieslēgties sistēmai</h2>
+            <form id="auth-form" onsubmit="handleAuth(event)">
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Lietotājvārds</label>
+                    <input type="text" id="username" required class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-bold mb-2">Parole</label>
+                    <input type="password" id="password" required class="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <button type="submit" id="auth-btn" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 font-semibold cursor-pointer">Ienākt</button>
+            </form>
+            <div class="mt-4 text-center">
+                <button onclick="toggleAuthMode()" id="toggle-auth-text" class="text-sm text-blue-500 hover:underline cursor-pointer">Nav konta? Reģistrēties</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. GALVENĀ LIETOTNE -->
+    <div id="app-container" class="hidden p-6 max-w-7xl mx-auto">
+        <!-- Augšējā josla -->
+        <div class="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm mb-6">
+            <h1 class="text-2xl font-bold text-gray-800">🗂️ Centralizētā Datu Uzskaites Tabula</h1>
+            <div class="flex items-center gap-4">
+                <span id="user-display" class="font-medium text-gray-600"></span>
+                <button onclick="logout()" class="bg-red-500 text-white px-4 py-1.5 rounded-md text-sm hover:bg-red-600 cursor-pointer">Iziet</button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <!-- Kreisā kolonna: Pievienošana / Labošana -->
+            <div class="bg-white p-5 rounded-lg shadow-sm h-fit">
+                <h3 id="form-title" class="text-lg font-bold mb-4 text-gray-700">➕ Pievienot jaunu ierakstu</h3>
+                <form id="crud-form" onsubmit="saveIeraksts(event)">
+                    <input type="hidden" id="edit-id">
+                    <div class="grid grid-cols-1 gap-3 text-sm">
+                        <div><label class="font-semibold text-gray-600">Numurs</label><input type="text" id="form-numurs" required class="w-full p-2 border rounded"></div>
+                        <div><label class="font-semibold text-gray-600">Uzskaites apzīmējums</label><input type="text" id="form-uzskaite" required class="w-full p-2 border rounded"></div>
+                        <div><label class="font-semibold text-gray-600">Nosaukums</label><input type="text" id="form-nosaukums" required class="w-full p-2 border rounded"></div>
+                        <div><label class="font-semibold text-gray-600">Izloksne</label><input type="text" id="form-izloksne" required class="w-full p-2 border rounded"></div>
+                        <div><label class="font-semibold text-gray-600">Skaits</label><input type="number" id="form-skaits" value="1" min="0" required class="w-full p-2 border rounded"></div>
+                        <div><label class="font-semibold text-gray-600">Novietojums</label><input type="text" id="form-novietojums" required class="w-full p-2 border rounded"></div>
+                        <div><label class="font-semibold text-gray-600">Piezīmes</label><textarea id="form-piezimes" class="w-full p-2 border rounded"></textarea></div>
+                        <div class="flex gap-2 pt-2">
+                            <button type="submit" class="flex-1 bg-green-600 text-white py-2 rounded hover:bg-green-700 font-medium cursor-pointer">Saglabāt</button>
+                            <button type="button" id="cancel-edit-btn" onclick="resetForm()" class="hidden flex-1 bg-gray-400 text-white py-2 rounded hover:bg-gray-500 cursor-pointer">Atcelt</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Labā kolonna: Filtri, Tabula un Eksports -->
+            <div class="lg:col-span-3 bg-white p-5 rounded-lg shadow-sm">
+                <!-- Filtru sadaļa -->
+                <div class="mb-6 p-4 bg-gray-50 rounded-md border border-gray-200">
+                    <h3 class="text-sm font-bold text-gray-700 mb-3">🔍 Datu atlases filtri (izvēlies vai ieraksti; "-" rāda visu)</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                        <div><label class="block mb-1 text-gray-500">Numurs</label><input type="text" id="f-numurs" value="-" oninput="loadIeraksti()" class="w-full p-1.5 border rounded"></div>
+                        <div><label class="block mb-1 text-gray-500">Uzskaites apz.</label><input type="text" id="f-uzskaite" value="-" oninput="loadIeraksti()" class="w-full p-1.5 border rounded"></div>
+                        <div><label class="block mb-1 text-gray-500">Nosaukums</label><input type="text" id="f-nosaukums" value="-" oninput="loadIeraksti()" class="w-full p-1.5 border rounded"></div>
+                        <div><label class="block mb-1 text-gray-500">Izloksne</label><input type="text" id="f-izloksne" value="-" oninput="loadIeraksti()" class="w-full p-1.5 border rounded"></div>
+                        <div><label class="block mb-1 text-gray-500">Skaits</label><input type="text" id="f-skaits" value="-" oninput="loadIeraksti()" class="w-full p-1.5 border rounded"></div>
+                        <div><label class="block mb-1 text-gray-500">Novietojums</label><input type="text" id="f-novietojums" value="-" oninput="loadIeraksti()" class="w-full p-1.5 border rounded"></div>
+                        <div><label class="block mb-1 text-gray-500">Piezīmes</label><input type="text" id="f-piezimes" value="-" oninput="loadIeraksti()" class="w-full p-1.5 border rounded"></div>
+                        <div class="flex items-end"><button onclick="clearFilters()" class="w-full bg-gray-200 py-1.5 rounded hover:bg-gray-300 font-medium">Attīrīt</button></div>
+                    </div>
+                </div>
+
+                <!-- Eksporta pogas -->
+                <div class="flex gap-2 mb-4 justify-end">
+                    <button onclick="exportCSV()" class="bg-gray-700 text-white px-3 py-1.5 text-xs rounded hover:bg-gray-800 cursor-pointer">CSV</button>
+                    <button onclick="exportExcel()" class="bg-emerald-600 text-white px-3 py-1.5 text-xs rounded hover:bg-emerald-700 cursor-pointer">Excel</button>
+                    <button onclick="exportPDF()" class="bg-darkred bg-red-700 text-white px-3 py-1.5 text-xs rounded hover:bg-red-800 cursor-pointer">PDF</button>
+                </div>
+
+                <!-- Tabula -->
+                <div class="overflow-x-auto">
+                    <table class="w-full border-collapse text-left text-sm" id="dati-table">
+                        <thead>
+                            <tr class="bg-gray-100 text-gray-700 uppercase text-xs border-b border-gray-200">
+                                <th class="p-3">Numurs</th>
+                                <th class="p-3">Uzskaites apzīmējums</th>
+                                <th class="p-3">Nosaukums</th>
+                                <th class="p-3">Izloksne</th>
+                                <th class="p-3">Skaits</th>
+                                <th class="p-3">Novietojums</th>
+                                <th class="p-3">Piezīmes</th>
+                                <th class="p-3 text-right">Darbības</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-body" class="divide-y divide-gray-100">
+                            <!-- Dati ielādēsies šeit -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT KLIENTA PUSES LOĢIKA -->
+    <script>
+        let isLoginMode = true;
+        let visiDati = []; // Pašreizējie nofiltrētie dati globālai saglabāšanai eksportam
+
+        function toggleAuthMode() {
+            isLoginMode = !isLoginMode;
+            document.getElementById('auth-title').innerText = isLoginMode ? 'Pieslēgties sistēmai' : 'Reģistrēt jaunu lietotāju';
+            document.getElementById('auth-btn').innerText = isLoginMode ? 'Ienākt' : 'Reģistrēties';
+            document.getElementById('toggle-auth-text').innerText = isLoginMode ? 'Nav konta? Reģistrēties' : 'Ir konts? Pieslēgties';
+        }
+
+        async function handleAuth(e) {
+            e.preventDefault();
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+            const url = isLoginMode ? '/api/login' : '/api/register';
+
+            let formData = new FormData();
+            formData.append('username', user);
+            formData.append('password', pass);
+
+            const res = await fetch(url, { method: 'POST', body: formData });
+            const data = await res.json();
+
+            if(res.ok) {
+                if(isLoginMode) {
+                    localStorage.setItem('user', data.username);
+                    showApp(data.username);
+                } else {
+                    alert('Reģistrācija veiksmīga! Tagad pieslēdzieties.');
+                    toggleAuthMode();
+                }
+            } else {
+                alert(data.detail || 'Kļūda autorizācijā');
+            }
+        }
+
+        function showApp(username) {
+            document.getElementById('auth-container').classList.add('hidden');
+            document.getElementById('app-container').classList.remove('hidden');
+            document.getElementById('user-display').innerText = `Lietotājs: ${username}`;
+            loadIeraksti();
+        }
+
+        function logout() {
+            localStorage.removeItem('user');
+            location.reload();
+        }
+
+        // --- CRUD UN FILTRĒŠANA ---
+        async function loadIeraksti() {
+            const queryParams = new URLSearchParams({
+                numurs: document.getElementById('f-numurs').value,
+                uzskaite: document.getElementById('f-uzskaite').value,
+                nosaukums: document.getElementById('f-nosaukums').value,
+                izloksne: document.getElementById('f-izloksne').value,
+                skaits: document.getElementById('f-skaits').value,
+                novietojums: document.getElementById('f-novietojums').value,
+                piezimes: document.getElementById('f-piezimes').value,
+            });
+
+            const res = await fetch(`/api/ieraksti?${queryParams}`);
+            visiDati = await res.json();
+            
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+
+            visiDati.forEach(row => {
+                tbody.innerHTML += `
+                    <tr class="hover:bg-gray-50 border-b border-gray-100">
+                        <td class="p-3">${row.numurs}</td>
+                        <td class="p-3">${row.uzskaite}</td>
+                        <td class="p-3">${row.nosaukums}</td>
+                        <td class="p-3">${row.izloksne}</td>
+                        <td class="p-3">${row.skaits}</td>
+                        <td class="p-3">${row.novietojums}</td>
+                        <td class="p-3 text-xs text-gray-500">${row.piezimes || ''}</td>
+                        <td class="p-3 text-right text-xs">
+                            <button onclick='editIeraksts(${JSON.stringify(row)})' class="bg-blue-100 text-blue-700 px-2 py-1 rounded mr-1 hover:bg-blue-200 cursor-pointer">Labot</button>
+                            <button onclick="deleteIeraksts(${row.id})" class="bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200 cursor-pointer">Dzēst</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        async function saveIeraksts(e) {
+            e.preventDefault();
+            const id = document.getElementById('edit-id').value;
+            const payload = {
+                numurs: document.getElementById('form-numurs').value,
+                uzskaite: document.getElementById('form-uzskaite').value,
+                nosaukums: document.getElementById('form-nosaukums').value,
+                izloksne: document.getElementById('form-izloksne').value,
+                skaits: parseInt(document.getElementById('form-skaits').value),
+                novietojums: document.getElementById('form-novietojums').value,
+                piezimes: document.getElementById('form-piezimes').value,
+            };
+
+            const method = id ? 'PUT' : 'POST';
+            const url = id ? `/api/ieraksti/${id}` : '/api/ieraksti';
+
+            const res = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                resetForm();
+                loadIeraksti();
+            }
+        }
+
+        function editIeraksts(row) {
+            document.getElementById('edit-id').value = row.id;
+            document.getElementById('form-numurs').value = row.numurs;
+            document.getElementById('form-uzskaite').value = row.uzskaite;
+            document.getElementById('form-nosaukums').value = row.nosaukums;
+            document.getElementById('form-izloksne').value = row.izloksne;
+            document.getElementById('form-skaits').value = row.skaits;
+            document.getElementById('form-novietojums').value = row.novietojums;
+            document.getElementById('form-piezimes').value = row.piezimes;
+
+            document.getElementById('form-title').innerText = "📝 Labot ierakstu";
+            document.getElementById('cancel-edit-btn').classList.remove('hidden');
+        }
+
+        async function deleteIeraksts(id) {
+            if(confirm("Vai tiešām vēlaties dzēst šo ierakstu? Visi lietotāji redzēs šīs izmaiņas.")) {
+                await fetch(`/api/ieraksti/${id}`, { method: 'DELETE' });
+                loadIeraksti();
+            }
+        }
+
+        function resetForm() {
+            document.getElementById('crud-form').reset();
+            document.getElementById('edit-id').value = '';
+            document.getElementById('form-title').innerText = "➕ Pievienot jaunu ierakstu";
+            document.getElementById('cancel-edit-btn').classList.add('hidden');
+        }
+
+        function clearFilters() {
+            ['f-numurs', 'f-uzskaite', 'f-nosaukums', 'f-izloksne', 'f-skaits', 'f-novietojums', 'f-piezimes'].forEach(id => {
+                document.getElementById(id).value = '-';
+            });
+            loadIeraksti();
+        }
+
+        // --- EKSPORTA FUNKCIJAS ---
+        function getCleanExportData() {
+            return visiDati.map(r => ({
+                "Numurs": r.numurs,
+                "Uzskaites apzīmējums": r.uzskaite,
+                "Nosaukums": r.nosaukums,
+                "Izloksne": r.izloksne,
+                "Skaits": r.skaits,
+                "Novietojums": r.novietojums,
+                "Piezīmes": r.piezimes
+            }));
+        }
+
+        function exportCSV() {
+            const data = getCleanExportData();
+            if(data.length === 0) return alert('Nav datu eksportam');
+            const csvRows = [];
+            const headers = Object.keys(data[0]);
+            csvRows.push(headers.join(','));
+
+            for (const row of data) {
+                const values = headers.map(header => {
+                    const escaped = ('' + row[header]).replace(/"/g, '\\"');
+                    return `"${escaped}"`;
+                });
+                csvRows.push(values.join(','));
+            }
+            
+            // utf-8-sig BOM (\uFEFF) nodrošina, ka Excel pareizi rādīs latviešu garumzīmes
+            const blob = new Blob(["\uFEFF" + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'exporteti_dati.csv';
+            a.click();
+        }
+
+        function exportExcel() {
+            const data = getCleanExportData();
+            if(data.length === 0) return alert('Nav datu eksportam');
+            const worksheet = XLSX.utils.json_to_sheet(data);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Uzskaite");
+            XLSX.writeFile(workbook, "exporteti_dati.xlsx");
+        }
+
+        function exportPDF() {
+            const data = getCleanExportData();
+            if(data.length === 0) return alert('Nav datu eksportam');
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            doc.text("Uzskaites dati", 14, 15);
+            
+            const headers = [["Numurs", "Uzskaites apz.", "Nosaukums", "Izloksne", "Skaits", "Novietojums", "Piezimes"]];
+            const rows = data.map(r => [r["Numurs"], r["Uzskaites apzīmējums"], r["Nosaukums"], r["Izloksne"], r["Skaits"], r["Novietojums"], r["Piezīmes"]]);
+            
+            doc.autoTable({
+                head: headers,
+                body: rows,
+                startY: 20,
+                styles: { fontSize: 8 }
+            });
+            
+            doc.save("exporteti_dati.pdf");
+        }
+
+        // Pārbauda, vai lietotājs jau iepriekš bijis pieslēdzies
+        window.onload = function() {
+            const savedUser = localStorage.getItem('user');
+            if(savedUser) showApp(savedUser);
+        }
+    </script>
+</body>
+</html>
